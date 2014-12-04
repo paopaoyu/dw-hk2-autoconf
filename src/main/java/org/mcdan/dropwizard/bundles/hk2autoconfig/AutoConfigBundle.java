@@ -20,7 +20,6 @@ import org.glassfish.hk2.utilities.AbstractActiveDescriptor;
 import org.glassfish.hk2.utilities.BuilderHelper;
 import org.glassfish.hk2.utilities.ServiceLocatorUtilities;
 import org.glassfish.hk2.utilities.binding.BindingBuilderFactory;
-import org.glassfish.hk2.utilities.binding.NamedBindingBuilder;
 import org.glassfish.hk2.utilities.binding.ServiceBindingBuilder;
 import org.reflections.Reflections;
 import org.reflections.scanners.SubTypesScanner;
@@ -32,15 +31,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.codahale.metrics.health.HealthCheck;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
-public class AutoResourceConfigBundle<T extends Configuration> implements ConfiguredBundle<T> {
-    private static final Logger LOG = LoggerFactory.getLogger(AutoResourceConfigBundle.class);
+public class AutoConfigBundle<T extends Configuration> implements ConfiguredBundle<T> {
+    private static final Logger LOG = LoggerFactory.getLogger(AutoConfigBundle.class);
     private ServiceLocator      locator;
     private Class<T>            klass;
     private Reflections         reflections;
 
-    public AutoResourceConfigBundle(final Class<T> clazz, final String packageName) {
+    AutoConfigBundle(final Class<T> clazz, final String packageName) {
         this.klass = clazz;
         FilterBuilder filterBuilder = new FilterBuilder();
         filterBuilder.include(FilterBuilder.prefix(packageName));
@@ -51,9 +49,13 @@ public class AutoResourceConfigBundle<T extends Configuration> implements Config
         reflections = new Reflections(reflectionCfg);
     }
 
+    public static <T extends Configuration> AutoConfigBundleBuider<T> newBuilder() {
+        return new AutoConfigBundleBuider<T>();
+    }
+
     @Override
     public void initialize(final Bootstrap<?> bootstrap) {
-        LOG.warn("INIT of the bundle");
+        LOG.debug("Intialzing auto config bundle");
         locator = ServiceLocatorUtilities.createAndPopulateServiceLocator();
     }
 
@@ -84,7 +86,6 @@ public class AutoResourceConfigBundle<T extends Configuration> implements Config
             AbstractActiveDescriptor<?> s = BuilderHelper.createConstantDescriptor(o, configNamePrefix + key, o.getClass());
             dynConfig.addActiveDescriptor(s);            
         }
-//        AbstractActiveDescriptor<String> s = BuilderHelper.createConstantDescriptor("foobar?", "config.test", String.class);
         dynConfig.commit();
     }
 

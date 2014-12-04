@@ -1,0 +1,1 @@
+package org.mcdan.dropwizard.bundles.hk2autoconfig;
