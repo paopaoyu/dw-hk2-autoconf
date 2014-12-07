@@ -6,6 +6,7 @@ import io.dropwizard.setup.Bootstrap;
 import io.dropwizard.setup.Environment;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -35,11 +36,11 @@ import com.codahale.metrics.health.HealthCheck;
 public class AutoConfigBundle<T extends Configuration> implements ConfiguredBundle<T> {
     private static final Logger LOG = LoggerFactory.getLogger(AutoConfigBundle.class);
     private ServiceLocator      locator;
-    private Class<T>            klass;
+    private Class<T>            configurationClass;
     private Reflections         reflections;
 
-    AutoConfigBundle(final Class<T> clazz, final String packageName) {
-        this.klass = clazz;
+    AutoConfigBundle(final Class<T> configurationClass, final String packageName) {
+        this.configurationClass = configurationClass;
         FilterBuilder filterBuilder = new FilterBuilder();
         filterBuilder.include(FilterBuilder.prefix(packageName));
 
@@ -55,36 +56,44 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
 
     @Override
     public void initialize(final Bootstrap<?> bootstrap) {
-        LOG.debug("Intialzing auto config bundle");
+        LOG.debug("Intialzing auto config bundle.");
         locator = ServiceLocatorUtilities.createAndPopulateServiceLocator();
     }
 
     @Override
     public void run(final T configuration, final Environment environment) throws Exception {
-        Map<String,Object> configMap = environment.getObjectMapper().convertValue(configuration, Map.class);
-        registerConfigurationProvider(configuration, configMap);
+        registerConfigurationProvider(configuration, environment);
         registerResources(environment);
         registerHealthChecks(environment);
     }
 
-    private void registerConfigurationProvider(final T configuration, final Map<String, Object> configMap) {
-        final Set<String> blackListedConfigAttribute = new HashSet<String>();
-        blackListedConfigAttribute.addAll(Arrays.asList("logging", "server", "metrics"));
-        
+    private void registerConfigurationProvider(final T configuration, final Environment environment) {
+        // Create binding for the config class so it is injectable.
+        ServiceBindingBuilder<T> configClassBinding = BindingBuilderFactory.newFactoryBinder(
+                new FactoryWrapper(configuration)).to(this.configurationClass);
         DynamicConfigurationService dcs = locator.getService(DynamicConfigurationService.class);
         DynamicConfiguration dynConfig = dcs.createDynamicConfiguration();
-        ServiceBindingBuilder<T> binder = BindingBuilderFactory.newFactoryBinder(new FactoryWrapper(configuration)).to(
-                this.klass);
-        BindingBuilderFactory.addBinding(binder, dynConfig);
-        
+        BindingBuilderFactory.addBinding(configClassBinding, dynConfig);
+
+        // Attempt to get all the configuration parameter that are suitable for
+        // injection.
+        Map<String, Object> configMap = environment.getObjectMapper().convertValue(configuration, Map.class);
+        if (configMap == null) {
+            configMap = Collections.<String, Object> emptyMap();
+        }
+        // Don't include any of the default things.
+        final Set<String> blackListedConfigAttribute = new HashSet<String>();
+        blackListedConfigAttribute.addAll(Arrays.asList("logging", "server", "metrics"));
+
         final String configNamePrefix = "config.";
         for (String key : configMap.keySet()) {
             if (blackListedConfigAttribute.contains(key)) {
                 continue;
             }
             Object o = configMap.get(key);
-            AbstractActiveDescriptor<?> s = BuilderHelper.createConstantDescriptor(o, configNamePrefix + key, o.getClass());
-            dynConfig.addActiveDescriptor(s);            
+            AbstractActiveDescriptor<?> s = BuilderHelper.createConstantDescriptor(o, configNamePrefix + key,
+                    o.getClass());
+            dynConfig.addActiveDescriptor(s);
         }
         dynConfig.commit();
     }
@@ -120,5 +129,10 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
         public T provide() {
             return this.instance;
         }
+    }
+
+    // Only for Tests
+    void setLocator(final ServiceLocator locator) {
+        this.locator = locator;
     }
 }
