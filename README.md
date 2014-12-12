@@ -1,6 +1,8 @@
 dw-hk2-autoconf
 ===============
 
+[![Build Status](https://travis-ci.org/mcdan/dw-hk2-autoconf.svg)](https://travis-ci.org/mcdan/dw-hk2-autoconf)
+
 Dropwizard AutoConfig using HK2
 
 This is an attempt to rewrite the guice auto config project from here: https://github.com/HubSpot/dropwizard-guice.
