@@ -2,6 +2,7 @@ dw-hk2-autoconf
 ===============
 
 [![Build Status](https://travis-ci.org/mcdan/dw-hk2-autoconf.svg)](https://travis-ci.org/mcdan/dw-hk2-autoconf)
+[![Coverage Status](https://img.shields.io/coveralls/mcdan/dw-hk2-autoconf.svg)](https://coveralls.io/r/mcdan/dw-hk2-autoconf)
 
 Dropwizard AutoConfig using HK2
 
