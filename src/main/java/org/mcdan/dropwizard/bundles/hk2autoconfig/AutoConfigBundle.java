@@ -13,15 +13,11 @@ import java.util.Set;
 
 import javax.ws.rs.Path;
 
-import org.glassfish.hk2.api.DynamicConfiguration;
-import org.glassfish.hk2.api.DynamicConfigurationService;
 import org.glassfish.hk2.api.Factory;
-import org.glassfish.hk2.api.ServiceLocator;
 import org.glassfish.hk2.utilities.AbstractActiveDescriptor;
 import org.glassfish.hk2.utilities.BuilderHelper;
-import org.glassfish.hk2.utilities.ServiceLocatorUtilities;
-import org.glassfish.hk2.utilities.binding.BindingBuilderFactory;
-import org.glassfish.hk2.utilities.binding.ServiceBindingBuilder;
+import org.glassfish.hk2.utilities.binding.AbstractBinder;
+import org.jvnet.hk2.annotations.Service;
 import org.reflections.Reflections;
 import org.reflections.scanners.SubTypesScanner;
 import org.reflections.scanners.TypeAnnotationsScanner;
@@ -35,7 +31,6 @@ import com.codahale.metrics.health.HealthCheck;
 
 public class AutoConfigBundle<T extends Configuration> implements ConfiguredBundle<T> {
     private static final Logger LOG = LoggerFactory.getLogger(AutoConfigBundle.class);
-    private ServiceLocator      locator;
     private Class<T>            configurationClass;
     private Reflections         reflections;
 
@@ -47,7 +42,7 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
         ConfigurationBuilder reflectionCfg = new ConfigurationBuilder();
         reflectionCfg.addUrls(ClasspathHelper.forPackage(packageName));
         reflectionCfg.filterInputsBy(filterBuilder).setScanners(new SubTypesScanner(), new TypeAnnotationsScanner());
-        reflections = new Reflections(reflectionCfg);
+        reflections = new Reflections(reflectionCfg);        
     }
 
     public static <T extends Configuration> AutoConfigBundleBuider<T> newBuilder() {
@@ -57,26 +52,28 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
     @Override
     public void initialize(final Bootstrap<?> bootstrap) {
         LOG.debug("Intialzing auto config bundle.");
-        locator = ServiceLocatorUtilities.createAndPopulateServiceLocator();
     }
 
     @Override
     public void run(final T configuration, final Environment environment) throws Exception {
         registerConfigurationProvider(configuration, environment);
+        registerServices(environment);
         registerResources(environment);
         registerHealthChecks(environment);
     }
 
     private void registerConfigurationProvider(final T configuration, final Environment environment) {
         // Create binding for the config class so it is injectable.
-        ServiceBindingBuilder<T> configClassBinding = BindingBuilderFactory.newFactoryBinder(
-                new FactoryWrapper(configuration)).to(this.configurationClass);
-        DynamicConfigurationService dcs = locator.getService(DynamicConfigurationService.class);
-        DynamicConfiguration dynConfig = dcs.createDynamicConfiguration();
-        BindingBuilderFactory.addBinding(configClassBinding, dynConfig);
+        environment.jersey().register(new AbstractBinder() {
+            @Override
+            protected void configure() {
+                bind(configuration).to(configurationClass);
+            }
+        });
 
         // Attempt to get all the configuration parameter that are suitable for
         // injection.
+        @SuppressWarnings("unchecked")
         Map<String, Object> configMap = environment.getObjectMapper().convertValue(configuration, Map.class);
         if (configMap == null) {
             configMap = Collections.<String, Object> emptyMap();
@@ -86,6 +83,7 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
         blackListedConfigAttribute.addAll(Arrays.asList("logging", "server", "metrics"));
 
         final String configNamePrefix = "config.";
+        Set<AbstractActiveDescriptor<?>> configEntries = new HashSet<AbstractActiveDescriptor<?>>();
         for (String key : configMap.keySet()) {
             if (blackListedConfigAttribute.contains(key)) {
                 continue;
@@ -93,46 +91,64 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
             Object o = configMap.get(key);
             AbstractActiveDescriptor<?> s = BuilderHelper.createConstantDescriptor(o, configNamePrefix + key,
                     o.getClass());
-            dynConfig.addActiveDescriptor(s);
+            configEntries.add(s);
         }
-        dynConfig.commit();
+        if (!configEntries.isEmpty()) {
+            environment.jersey().getResourceConfig().register(new ConfigBinder(configEntries));
+        }
+
     }
 
+    private void registerServices(final Environment environment) {
+        Set<Class<?>> services = this.reflections.getTypesAnnotatedWith(Service.class, true);
+        if (!services.isEmpty()) {
+            environment.jersey().register(new ServiceBinder(services));
+        }
+    }
+    
     private void registerResources(final Environment environment) {
         Set<Class<? extends Object>> resourceClasses = reflections.getTypesAnnotatedWith(Path.class);
-        Object resource;
         for (Class<?> resourceClass : resourceClasses) {
-            resource = locator.createAndInitialize(resourceClass);
-            environment.jersey().register(resource);
+            environment.jersey().register(resourceClass);
         }
     }
 
     private void registerHealthChecks(final Environment env) {
         Set<Class<? extends HealthCheck>> healthCheckClasses = reflections.getSubTypesOf(HealthCheck.class);
         for (Class<? extends HealthCheck> healthCheckKlass : healthCheckClasses) {
-            env.healthChecks().register(healthCheckKlass.getName(), locator.createAndInitialize(healthCheckKlass));
+            try {
+                env.healthChecks().register(healthCheckKlass.getName(), healthCheckKlass.newInstance());
+            } catch (InstantiationException | IllegalAccessException e) {
+                LOG.error("Could not create health check.", e);
+            }
         }
     }
 
-    class FactoryWrapper implements Factory<T> {
-        private final T instance;
-
-        public FactoryWrapper(final T object) {
-            this.instance = object;
+    class ServiceBinder extends AbstractBinder {
+        final Set<Class<?>> klasses;
+        public ServiceBinder(Set<Class<?>> services) {
+            this.klasses = services;
         }
 
         @Override
-        public void dispose(T arg0) {
-        }
-
-        @Override
-        public T provide() {
-            return this.instance;
+        protected void configure() {
+            for (Class<?> klass : this.klasses) {
+                addActiveDescriptor(klass);                
+            }
         }
     }
+    
+    class ConfigBinder extends AbstractBinder {
+        final Set<AbstractActiveDescriptor<?>> descriptorList;
+        public ConfigBinder(Set<AbstractActiveDescriptor<?>> configEntries) {
+            this.descriptorList = configEntries;
+        }
 
-    // Only for Tests
-    void setLocator(final ServiceLocator locator) {
-        this.locator = locator;
+        @Override
+        protected void configure() {
+            for (AbstractActiveDescriptor<?> d : this.descriptorList) {
+                addActiveDescriptor(d);                
+            }
+        }
     }
 }
