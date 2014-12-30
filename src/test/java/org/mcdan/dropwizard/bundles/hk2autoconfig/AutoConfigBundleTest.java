@@ -12,7 +12,7 @@ import java.util.Map;
 import org.glassfish.hk2.api.DynamicConfiguration;
 import org.glassfish.hk2.api.DynamicConfigurationService;
 import org.glassfish.hk2.utilities.AbstractActiveDescriptor;
-import org.glassfish.jersey.server.ResourceConfig;
+import org.glassfish.hk2.utilities.binding.AbstractBinder;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -20,6 +20,8 @@ import org.mcdan.dropwizard.bundles.hk2autoconfig.test.resource.TestResource;
 import org.mcdan.dropwizard.bundles.hk2autoconfig.test.service.ServiceObject;
 import org.mockito.InOrder;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import com.codahale.metrics.health.HealthCheck;
 import com.codahale.metrics.health.HealthCheckRegistry;
@@ -31,9 +33,8 @@ public class AutoConfigBundleTest {
     private Bootstrap<Configuration>    bootstrap;
     private Environment                 env;
     private ObjectMapper                objMapper;
-    private ResourceConfig              resourceConfig;
-    private ServiceObject so = new ServiceObject();
-
+    private JerseyEnvironment jersey;
+    
     @Before
     public void setup() {
         config = Mockito.mock(Configuration.class);
@@ -42,10 +43,20 @@ public class AutoConfigBundleTest {
         objMapper = Mockito.mock(ObjectMapper.class);
         Mockito.when(env.getObjectMapper()).thenReturn(objMapper);
         // Setup some mocks so there's no need to load stuff in HK2 at all.
-        final JerseyEnvironment jersey = Mockito.mock(JerseyEnvironment.class);
-        resourceConfig = Mockito.mock(ResourceConfig.class);
+        jersey = Mockito.mock(JerseyEnvironment.class);
         Mockito.when(env.jersey()).thenReturn(jersey);
-        Mockito.when(jersey.getResourceConfig()).thenReturn(resourceConfig);
+        Mockito.doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Throwable {
+                AbstractBinder a = (AbstractBinder) invocation.getArguments()[0];
+                if (a != null) {
+                    a.bind(Mockito.mock(DynamicConfiguration.class));                    
+                }
+                return null;
+            }
+        
+        }).when(jersey).register(Mockito.any());
+
     }
     
     @After
@@ -115,8 +126,6 @@ public class AutoConfigBundleTest {
     public void testServiceBinder() throws Exception {
         AutoConfigBundle<Configuration> bundle = new AutoConfigBundle<Configuration>(Configuration.class,
                 "org.mcdan.dropwizard.bundles.hk2autoconfig.test.service");
-        final JerseyEnvironment jersey = Mockito.mock(JerseyEnvironment.class);
-        Mockito.when(env.jersey()).thenReturn(jersey);
         bundle.initialize(bootstrap);
         bundle.run(config, env);
         

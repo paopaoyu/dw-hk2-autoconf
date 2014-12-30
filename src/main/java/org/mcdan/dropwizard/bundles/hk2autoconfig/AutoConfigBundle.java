@@ -94,7 +94,7 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
             configEntries.add(s);
         }
         if (!configEntries.isEmpty()) {
-            environment.jersey().getResourceConfig().register(new ConfigBinder(configEntries));
+            environment.jersey().register(new ConfigBinder(configEntries));
         }
 
     }
@@ -133,7 +133,7 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
         @Override
         protected void configure() {
             for (Class<?> klass : this.klasses) {
-                addActiveDescriptor(klass);                
+                addActiveDescriptor(klass);
             }
         }
     }
