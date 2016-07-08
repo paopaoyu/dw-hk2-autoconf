@@ -46,4 +46,4 @@
 
 ###将dropwizard与IOC容器结合
 
-目前dropwizard已经有了可以和spring和guice这两个著名的ioc容器相关结合的开源实现，但是由于dropwizard使用到了Jersey，而Jersey中就已经含有了一个HK2的IOC容器，[dw-hk2-autoconf](https://github.com/mcdan/dw-hk2-autoconf)就是这样的一个项目，但是直接使用这个项目的实现，并不能完全达到实现一种“微内核+插件”的架构模式，其根本原因就是没有将dropwizard的Configuration对象进行相关的拆解，注入到HK2的IOC容器中，已经将dw-hk2-autoconf fork出来，增加了将Configuration进行分析的过程，研究就能基本实现“微内核+插件”的架构模式，主要的修改是在[AutoConfigBundle.java](https://github.com/paopaoyu/dw-hk2-autoconf/blob/master/src/main/java/org/mcdan/dropwizard/bundles/hk2autoconfig/AutoConfigBundle.java)中增加了registerSubConfigurationProvider方法
+目前dropwizard已经有了可以和spring和guice这两个著名的ioc容器相关结合的开源实现，但是由于dropwizard使用到了Jersey，而Jersey中就已经含有了一个HK2的IOC容器，[dw-hk2-autoconf](https://github.com/mcdan/dw-hk2-autoconf)就是这样的一个项目，但是直接使用这个项目的实现，并不能完全达到实现一种“微内核+插件”的架构模式，其根本原因就是没有将dropwizard的Configuration对象进行相关的拆解，注入到HK2的IOC容器中，已经将dw-hk2-autoconf fork出来，增加了将Configuration进行分析的过程，基本就能实现“微内核+插件”的架构模式，主要的修改是在[AutoConfigBundle.java](https://github.com/paopaoyu/dw-hk2-autoconf/blob/master/src/main/java/org/mcdan/dropwizard/bundles/hk2autoconfig/AutoConfigBundle.java)中增加了registerSubConfigurationProvider方法
