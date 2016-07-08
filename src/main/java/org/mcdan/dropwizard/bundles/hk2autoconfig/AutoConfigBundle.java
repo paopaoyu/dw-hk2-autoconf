@@ -1,21 +1,19 @@
 package org.mcdan.dropwizard.bundles.hk2autoconfig;
 
-import io.dropwizard.Configuration;
-import io.dropwizard.ConfiguredBundle;
-import io.dropwizard.setup.Bootstrap;
-import io.dropwizard.setup.Environment;
-
+import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import javax.ws.rs.Path;
 
-import org.glassfish.hk2.api.Factory;
 import org.glassfish.hk2.utilities.AbstractActiveDescriptor;
 import org.glassfish.hk2.utilities.BuilderHelper;
+import org.glassfish.hk2.utilities.ServiceLocatorUtilities;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
 import org.jvnet.hk2.annotations.Service;
 import org.reflections.Reflections;
@@ -28,6 +26,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.codahale.metrics.health.HealthCheck;
+
+import io.dropwizard.Configuration;
+import io.dropwizard.ConfiguredBundle;
+import io.dropwizard.setup.Bootstrap;
+import io.dropwizard.setup.Environment;
 
 public class AutoConfigBundle<T extends Configuration> implements ConfiguredBundle<T> {
     private static final Logger LOG = LoggerFactory.getLogger(AutoConfigBundle.class);
@@ -57,12 +60,66 @@ public class AutoConfigBundle<T extends Configuration> implements ConfiguredBund
     @Override
     public void run(final T configuration, final Environment environment) throws Exception {
         registerConfigurationProvider(configuration, environment);
+        registerSubConfigurationProvider(configuration,environment);
         registerServices(environment);
         registerResources(environment);
         registerHealthChecks(environment);
     }
 
-    private void registerConfigurationProvider(final T configuration, final Environment environment) {
+    private void registerSubConfigurationProvider(final T configuration, final Environment environment) {
+		final List<Field> subDeclaredFields = Arrays.asList(configuration.getClass().getDeclaredFields());
+		
+		
+		final List<Field> subConfigFields = filterOutSubConf(subDeclaredFields);
+		
+		
+		environment.jersey().register(new AbstractBinder() {
+            @Override
+            protected void configure() {
+            	
+            	for(Field subConfField:subConfigFields){
+            		Object subConfig;
+					try {
+						subConfField.setAccessible(true);
+						subConfig = subConfField.get(configuration);
+						if(subConfig!=null){
+	            			bind(subConfig);
+	            		}
+					} catch (IllegalArgumentException | IllegalAccessException e) {
+						e.printStackTrace();
+					}
+            		
+            	}
+            	
+                
+            }
+        });
+		
+
+	}
+
+	private List<Field> filterOutSubConf(List<Field> subDeclaredFields) {
+	
+		List<Field> parentDeclaredFields = Arrays.asList(Configuration.class.getDeclaredFields());
+		List<Field> resultFields = new ArrayList<>();
+		for(Field subField:subDeclaredFields){
+			if(subField.getType().isPrimitive()){
+				continue;
+			}
+			
+			if(subField.getType().equals(String.class)){
+				continue;
+			}
+			
+			if(parentDeclaredFields.contains(subField)){
+				continue;
+			}
+			resultFields.add(subField);
+		}
+		return resultFields;
+	}
+
+	private void registerConfigurationProvider(final T configuration, final Environment environment) {
         // Create binding for the config class so it is injectable.
         environment.jersey().register(new AbstractBinder() {
             @Override
